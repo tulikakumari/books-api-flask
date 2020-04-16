@@ -3,6 +3,8 @@ import json
 from settings import *
 from bookModel import *
 import jwt, datetime
+from userModel import User
+from functools import wraps
   
 # books=[
 #     {
@@ -29,20 +31,44 @@ DEFAULT_PAGE_LIMIT=3
 
 app.config['SECRET_KEY']='meow'
 
-@app.route('/login')
+@app.route('/login',methods=['POST'])
 def get_token():
-    expiration_date = datetime.datetime.utcnow()+ datetime.timedelta(seconds=3600)
-    token = jwt.encode({'exp':expiration_date},app.config['SECRET_KEY'],algorithm='HS256')
-    return token
+    request_data = request.get_json()
+    username = str(request_data['username'])
+    password = str(request_data['password'])
 
+    match = User.username_password_match(username,password)
+    if match:
+        expiration_date = datetime.datetime.utcnow()+ datetime.timedelta(seconds=3600)
+        token = jwt.encode({'exp':expiration_date},app.config['SECRET_KEY'],algorithm='HS256')
+        return token
+    else:
+        return Response('',401,mimetype='application/json')
+
+@app.route('/books/page/<int:page_number>')
+def get_paginated_books(page_number):
+    print(type(request.args.get('limit')))
+    LIMIT = request.args.get('limit',DEFAULT_PAGE_LIMIT,int)
+    startIndex = page_number* LIMIT- LIMIT
+    endIndex = page_number*LIMIT
+    print(startIndex)
+    print(endIndex)
+    return jsonify({'books':books[startIndex:endIndex]})
+
+def token_required(f):  
+    @wraps(f)
+    def wrraper(*args,**kwargs):
+        token = request.args.get('token')
+        try:
+            jwt.decode(token,app.config['SECRET_KEY'])
+            return f(*args,**kwargs)
+        except:
+            return jsonify({'error':'Need a valid token to view this page'}),401
+    return wrraper
 
 @app.route('/books')
+
 def get_books():
-    token = request.args.get('token')
-    try:
-        jwt.decode(token,app.config['SECRET_KEY'])
-    except:
-        return jsonify({'error':'Need a valid token to view this page'}),401
     return jsonify({'books':Book.get_all_books()})
 
 
@@ -54,6 +80,7 @@ def validbookObject(bookObject):
 
 
 @app.route('/books',methods=['GET','POST'])
+@token_required
 def add_books():
     request_data = request.get_json()
     if(validbookObject(request_data)):
@@ -72,7 +99,7 @@ def add_books():
             "error":"Invalid book object passed in the string",
             "helpstring":"'name':'bookname','price':'bookprice','isbn':'isbn number'"
         }
-        response=Response(json.dumps(invalidbookObject),status= 401,mimetype='appliactaion/json')
+        response=Response(json.dumps(invalidbookObject),status= 401,mimetype='application/json')
         return response
 
     #  return jsonify(request.get_json())
@@ -97,6 +124,7 @@ def valid_put_request_data(request_data):
         return "False"
 
 @app.route('/books/<int:isbn>',methods=['PUT'])
+@token_required
 def replace_books(isbn):
     request_data = request.get_json()
     if(not valid_put_request_data(request_data)):
@@ -104,7 +132,7 @@ def replace_books(isbn):
             "error":"valid book request must be passed in the request",
             "helpString":"Data passed id similar to this{'name':tfgh,'price':7.88}"
         }
-        response = Response(json.dumbs(invalidbookObject),status=400,mimetype='appliactaion/json')
+        response = Response(json.dumbs(invalidbookObject),status=400,mimetype='application/json')
         return response
     # new_book={
     #     'name':request_data['name'],
@@ -123,6 +151,7 @@ def replace_books(isbn):
     response = Response("",status=204)
     return response
 @app.route('/books/<int:isbn>',methods=['PATCH'])
+@token_required
 def update_books(isbn):
     request_data = request.get_json()
     # update_book = {}
@@ -142,6 +171,7 @@ def update_books(isbn):
 # {
 #     'name':'Harry Pottr and the chamber of Secrets'
 @app.route('/books/<int:isbn>',methods=['DELETE'])
+@token_required
 def delete_book(isbn):
     deleted = Book.delete_book(isbn)
     print("deleted",deleted)
@@ -152,6 +182,6 @@ def delete_book(isbn):
     invalidbookObject={
             "error":"Book with the given isbn is not found so therefore unable to delete",
         }
-    response=Response(json.dumps(invalidbookObject),status=400,mimetype='appliactaion/json')
+    response=Response(json.dumps(invalidbookObject),status=400,mimetype='application/json')
     return response
 app.run(port=5000)
