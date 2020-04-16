@@ -40,7 +40,7 @@ def get_token():
 def get_books():
     token = request.args.get('token')
     try:
-        jwt.decode(token,spp.config['SECRET_KEY'])
+        jwt.decode(token,app.config['SECRET_KEY'])
     except:
         return jsonify({'error':'Need a valid token to view this page'}),401
     return jsonify({'books':Book.get_all_books()})
